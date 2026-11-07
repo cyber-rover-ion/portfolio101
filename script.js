@@ -1,8 +1,4 @@
-/* ==========================================================================
-   Jebin Pravinraj | Creative Developer Portfolio Scripts
-   Interactive background spotlight, smooth reveals, navigation & micro-interactions.
-   ========================================================================== */
-
+/* Portfolio interactions — lightweight, accessible, and motion-aware. */
 (() => {
   'use strict';
 
@@ -12,71 +8,49 @@
   const motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
   const finePointerQuery = window.matchMedia('(hover: hover) and (pointer: fine)');
   const desktopQuery = window.matchMedia('(min-width: 769px)');
-
   const prefersReducedMotion = () => motionQuery.matches;
 
-  /* ---------- Interactive Background Pointer Tracking ---------- */
-
+  // Pointer spotlight: update only while the pointer is moving.
   if (finePointerQuery.matches && !prefersReducedMotion()) {
-    let mouseX = window.innerWidth / 2;
-    let mouseY = window.innerHeight * 0.25;
-    let currentX = mouseX;
-    let currentY = mouseY;
-    let rafActive = false;
+    let targetX = window.innerWidth * 0.5;
+    let targetY = window.innerHeight * 0.25;
+    let currentX = targetX;
+    let currentY = targetY;
+    let frame = 0;
 
-    const updatePointer = () => {
-      // Smooth interpolation for spotlight movement
-      currentX += (mouseX - currentX) * 0.12;
-      currentY += (mouseY - currentY) * 0.12;
+    const renderSpotlight = () => {
+      currentX += (targetX - currentX) * 0.16;
+      currentY += (targetY - currentY) * 0.16;
+      root.style.setProperty('--mouse-x', currentX.toFixed(1) + 'px');
+      root.style.setProperty('--mouse-y', currentY.toFixed(1) + 'px');
 
-      root.style.setProperty('--mouse-x', `${currentX.toFixed(1)}px`);
-      root.style.setProperty('--mouse-y', `${currentY.toFixed(1)}px`);
-
-      if (Math.abs(mouseX - currentX) > 0.5 || Math.abs(mouseY - currentY) > 0.5) {
-        requestAnimationFrame(updatePointer);
+      if (Math.abs(targetX - currentX) > 0.5 || Math.abs(targetY - currentY) > 0.5) {
+        frame = requestAnimationFrame(renderSpotlight);
       } else {
-        rafActive = false;
+        frame = 0;
       }
     };
 
     window.addEventListener('pointermove', (event) => {
-      mouseX = event.clientX;
-      mouseY = event.clientY;
-
-      if (!rafActive) {
-        rafActive = true;
-        requestAnimationFrame(updatePointer);
-      }
+      targetX = event.clientX;
+      targetY = event.clientY;
+      if (!frame) frame = requestAnimationFrame(renderSpotlight);
     }, { passive: true });
   }
 
-  /* ---------- Header Scroll State ---------- */
-
+  // Header state, throttled to one update per animation frame.
   const header = document.querySelector('.site-header');
-
+  let scrollFrame = 0;
   const updateHeader = () => {
-    if (header) {
-      header.classList.toggle('is-scrolled', window.scrollY > 20);
-    }
+    if (header) header.classList.toggle('is-scrolled', window.scrollY > 20);
+    scrollFrame = 0;
   };
-
-  // Throttle header scroll updates with requestAnimationFrame to avoid layout thrashing
-let scrollTick = false;
-window.addEventListener('scroll', () => {
-  if (!scrollTick) {
-    scrollTick = true;
-    requestAnimationFrame(() => {
-      updateHeader();
-      scrollTick = false;
-    });
-  }
-}, { passive: true });
-// Remove the previous direct scroll listener (lines 63-64) – replacement will delete those lines.
-
+  window.addEventListener('scroll', () => {
+    if (!scrollFrame) scrollFrame = requestAnimationFrame(updateHeader);
+  }, { passive: true });
   updateHeader();
 
-  /* ---------- Mobile Navigation Drawer ---------- */
-
+  // Mobile navigation drawer.
   const toggle = document.querySelector('.menu-toggle');
   const menu = document.getElementById('mobile-menu');
 
@@ -92,7 +66,6 @@ window.addEventListener('scroll', () => {
     };
 
     const isMenuOpen = () => toggle.getAttribute('aria-expanded') === 'true';
-
     toggle.addEventListener('click', () => setMenuOpen(!isMenuOpen()));
 
     menu.querySelectorAll('a').forEach((link) => {
@@ -106,105 +79,68 @@ window.addEventListener('scroll', () => {
       }
     });
 
-    desktopQuery.addEventListener('change', (event) => {
-      if (event.matches) setMenuOpen(false);
-    });
+    if (typeof desktopQuery.addEventListener === 'function') {
+      desktopQuery.addEventListener('change', (event) => {
+        if (event.matches) setMenuOpen(false);
+      });
+    } else if (typeof desktopQuery.addListener === 'function') {
+      desktopQuery.addListener((event) => {
+        if (event.matches) setMenuOpen(false);
+      });
+    }
 
     setMenuOpen(false);
   }
 
-  /* ---------- Active Section Navigation Indicator ---------- */
+  // Highlight the navigation item for the section currently in view.
+  const navLinks = Array.from(document.querySelectorAll('.desktop-nav a[href^="#"]'));
+  const sections = navLinks
+    .map((link) => ({ link, section: document.getElementById(link.getAttribute('href').slice(1)) }))
+    .filter((item) => item.section);
 
-  const navLinks = document.querySelectorAll('.desktop-nav a[href^="#"]');
-  const linkBySection = new Map();
-
-  navLinks.forEach((link) => {
-    const targetId = link.getAttribute('href');
-    if (targetId && targetId !== '#') {
-      const section = document.querySelector(targetId);
-      if (section) linkBySection.set(section, link);
-    }
-  });
-
-  if ('IntersectionObserver' in window && linkBySection.size) {
+  if ('IntersectionObserver' in window && sections.length) {
     const sectionObserver = new IntersectionObserver((entries) => {
       entries.forEach((entry) => {
-        const link = linkBySection.get(entry.target);
-        if (!link) return;
-        if (entry.isIntersecting) {
-          navLinks.forEach((item) => item.removeAttribute('aria-current'));
-          link.setAttribute('aria-current', 'page');
-        }
+        if (!entry.isIntersecting) return;
+        navLinks.forEach((link) => link.removeAttribute('aria-current'));
+        const active = sections.find((item) => item.section === entry.target);
+        if (active) active.link.setAttribute('aria-current', 'page');
       });
-    }, {
-      rootMargin: '-35% 0px -50% 0px',
-    });
+    }, { rootMargin: '-35% 0px -50% 0px', threshold: 0 });
 
-    linkBySection.forEach((_, section) => sectionObserver.observe(section));
+    sections.forEach(({ section }) => sectionObserver.observe(section));
   }
 
-  /* ---------- Staggered Scroll Reveals ---------- */
-
+  // Reveal content as it enters the viewport. Fall back to visible content.
   const revealItems = document.querySelectorAll('[data-reveal]');
-
-  // Removed per-element stagger calculation for performance. Staggering is now handled via CSS using nth-child selectors.
-
-
-  const revealAll = () => {
-    revealItems.forEach((item) => item.classList.add('is-visible'));
-  };
+  const revealAll = () => revealItems.forEach((item) => item.classList.add('is-visible'));
 
   if (!('IntersectionObserver' in window) || prefersReducedMotion()) {
     revealAll();
-  } else {
-    // Reveal observer with automatic disconnect when all items are visible
-let remainingReveals = revealItems.length;
-const revealObserver = new IntersectionObserver((entries, observer) => {
-  entries.forEach((entry) => {
-    if (!entry.isIntersecting) return;
-    entry.target.classList.add('is-visible');
-    observer.unobserve(entry.target);
-    remainingReveals--;
-    if (remainingReveals === 0) {
-      observer.disconnect();
-    }
-  });
-}, { threshold: 0.08, rootMargin: '0px 0px -30px 0px' });
+  } else if (revealItems.length) {
+    const revealObserver = new IntersectionObserver((entries, observer) => {
       entries.forEach((entry) => {
         if (!entry.isIntersecting) return;
         entry.target.classList.add('is-visible');
         observer.unobserve(entry.target);
       });
-    }, {
-      threshold: 0.08,
-      rootMargin: '0px 0px -30px 0px',
-    });
+    }, { threshold: 0.08, rootMargin: '0px 0px -30px 0px' });
 
     revealItems.forEach((item) => revealObserver.observe(item));
   }
 
-  /* ---------- Subtle Magnetic Button Micro-Interaction ---------- */
-
+  // Small pointer response on desktop only; no continuous animation loop.
   if (finePointerQuery.matches && !prefersReducedMotion()) {
-    const buttons = document.querySelectorAll('.btn-primary, .btn-warm, .btn-ghost, .btn-project-cta');
-
-    buttons.forEach((btn) => {
-      btn.addEventListener('pointermove', (event) => {
-        const rect = btn.getBoundingClientRect();
-        const offsetX = event.clientX - rect.left - rect.width / 2;
-        const offsetY = event.clientY - rect.top - rect.height / 2;
-
-        // Subtle, constrained translation (max ~3-4px)
-        const moveX = Math.max(-4, Math.min(4, offsetX * 0.1));
-        const moveY = Math.max(-4, Math.min(4, offsetY * 0.12));
-
-        btn.style.transform = `translate3d(${moveX.toFixed(1)}px, ${moveY.toFixed(1)}px, 0)`;
+    document.querySelectorAll('.btn-primary, .btn-warm, .btn-ghost, .btn-project-cta').forEach((button) => {
+      button.addEventListener('pointermove', (event) => {
+        const rect = button.getBoundingClientRect();
+        const x = Math.max(-3, Math.min(3, (event.clientX - rect.left - rect.width / 2) * 0.07));
+        const y = Math.max(-3, Math.min(3, (event.clientY - rect.top - rect.height / 2) * 0.08));
+        button.style.transform = 'translate3d(' + x.toFixed(1) + 'px, ' + y.toFixed(1) + 'px, 0)';
       });
-
-      btn.addEventListener('pointerleave', () => {
-        btn.style.transform = '';
+      button.addEventListener('pointerleave', () => {
+        button.style.transform = '';
       });
     });
   }
-
 })();
